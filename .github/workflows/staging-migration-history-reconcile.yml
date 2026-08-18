@@ -91,7 +91,8 @@ jobs:
             20260816000003 \
             20260816000004 \
             20260816000005 \
-            20260816000006
+            20260816000006 \
+            20260818000001
 
       - name: Record migration history after repair
         run: supabase migration list --linked | tee ../migration-history-after.txt
