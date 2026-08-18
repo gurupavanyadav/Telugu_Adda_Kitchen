@@ -89,7 +89,7 @@ before(async () => {
     is_veg: true,
     is_available: true,
     customizations: [{ label: 'Extra', price: 5 }],
-  });
+  }).select('id').single();
   assertAllowed('checkout dish fixture', dish);
 
   const address = await admin.from('addresses').insert({
