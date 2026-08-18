@@ -1,0 +1,27 @@
+- [x] Confirm which P0/P1 launch-readiness item should be implemented next: P0-02, remove the production Supabase fallback.
+- [x] Inspect `src/lib/supabase.ts`, environment configuration, build scripts, and affected tests.
+- [x] Replace the unsafe fallback with explicit validation and safe local-development behavior.
+- [x] Add regression coverage that detects missing, malformed, placeholder, or embedded release configuration.
+- [x] Run the focused checks: configuration suite (4/4), production build with explicit public configuration, TypeScript check, lint (0 errors; 4 pre-existing warnings). Document the release environment prerequisites.
+- [x] Inspect the secure order RPC, orders schema, checkout wrapper, and checkout regression suite for idempotency integration points.
+- [x] Define the key format, request fingerprint, safe replay, and conflicting-reuse behavior.
+- [x] Add the idempotency schema migration, RPC handling, and checkout client key lifecycle.
+- [x] Add replay and concurrent-request regression coverage.
+- [x] Validate static checks and document the required migration sequence. Live RLS/checkout replay tests remain required in Docker-backed CI or staging because no container runtime is available in this sandbox.
+- [x] Inventory the remaining P0 code, infrastructure, and product-decision dependencies against the launch-readiness report.
+- [x] Remediate the high-severity transitive dependency issue and add auditable dependency evidence.
+- [x] Add protected migration governance, hosted-schema/policy verification, and backup/forward-fix runbooks.
+- [x] Document the approved single trusted restaurant operator model and its data-minimization rules.
+- [x] Add a narrow vendor fulfillment-order read contract and remove vendor access to billing totals and unnecessary customer profile data.
+- [x] Add authorization regression coverage for the vendor fulfillment-order contract.
+- [x] Run consolidated static verification for the P1-01 idempotency changes and prior P1-capable security controls. Live database verification remains required in Docker-backed CI or staging.
+- [x] Produce a detailed P0 closure and P1 verification report with the required hosted-environment evidence steps.
+- [ ] Obtain a non-production Supabase environment and protected deployment context for the remaining P0 acceptance checks.
+- [ ] Run the immutable migration workflow, hosted policy/grant inventory, and migration-history comparison in staging.
+- [ ] Rehearse backup and forward-fix recovery in staging and retain evidence.
+- [ ] Run the P0-only configuration, dependency, migration-manifest, vendor-authorisation, and deployment checks.
+- [ ] Produce the detailed P0-only closure report with concrete evidence and any remaining non-code blocker.
+- [ ] Create and validate a structured archive of all remediation source, migration, workflow, test, and documentation artifacts.
+- [ ] Guide staging project selection and protected GitHub environment configuration before any hosted operation.
+- [ ] Apply the immutable migration set and capture hosted policy/grant verification evidence.
+- [ ] Guide the staged P0 test execution and backup/forward-fix rehearsal one step at a time.

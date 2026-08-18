@@ -1,0 +1,82 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-cream-50 text-charcoal-800 font-sans antialiased;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-serif;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold transition-all duration-200 active:scale-95;
+  }
+  .btn-primary {
+    @apply btn bg-primary-700 text-white hover:bg-primary-800 shadow-md hover:shadow-lg;
+  }
+  .btn-gold {
+    @apply btn bg-gold-400 text-charcoal-900 hover:bg-gold-500 shadow-md hover:shadow-lg;
+  }
+  .btn-outline {
+    @apply btn border-2 border-primary-700 text-primary-700 hover:bg-primary-50;
+  }
+  .btn-ghost {
+    @apply btn text-charcoal-700 hover:bg-cream-200;
+  }
+  .input {
+    @apply w-full rounded-lg border border-charcoal-200 bg-white px-4 py-2.5 text-sm text-charcoal-900 placeholder:text-charcoal-400 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200 transition-colors;
+  }
+  .label {
+    @apply mb-1.5 block text-sm font-medium text-charcoal-700;
+  }
+  .card {
+    @apply rounded-xl bg-white shadow-sm border border-cream-200 transition-all duration-300;
+  }
+  .section-padding {
+    @apply px-4 sm:px-6 lg:px-8;
+  }
+  .container-app {
+    @apply mx-auto max-w-7xl section-padding;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #fdf9e9;
+}
+::-webkit-scrollbar-thumb {
+  background: #c8362a;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #a8281e;
+}
+
+/* Veg/Non-veg indicator */
+.veg-mark {
+  @apply inline-flex h-4 w-4 items-center justify-center rounded-sm border-2;
+}
+.veg-mark-veg {
+  @apply border-green-600;
+}
+.veg-mark-veg::after {
+  content: '';
+  @apply h-2 w-2 rounded-full bg-green-600;
+}
+.veg-mark-nonveg {
+  @apply border-red-600;
+}
+.veg-mark-nonveg::after {
+  content: '';
+  @apply h-2 w-2 rounded-full bg-red-600;
+}
