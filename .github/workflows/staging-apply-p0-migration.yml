@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       confirmation:
-        description: Type APPLY_STAGING_P0_MIGRATION to apply only migration 20260818000003 to isolated staging.
+        description: Type APPLY_STAGING_P0_MIGRATION to apply only migration 20260818000004 to isolated staging.
         required: true
         type: string
 
@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   apply-approved-staging-migration:
-    name: Apply the approved vendor catalog grant to staging
+    name: Apply the approved service-role dish fixture grant to staging
     if: github.event.inputs.confirmation == 'APPLY_STAGING_P0_MIGRATION'
     runs-on: ubuntu-latest
     environment: staging
@@ -82,9 +82,9 @@ jobs:
               print version
             }
           ' ../migration-history-before.txt)"
-          test "$pending_versions" = "20260818000003"
+          test "$pending_versions" = "20260818000004"
 
-      - name: Apply the approved vendor catalog grant
+      - name: Apply the approved service-role dish fixture grant
         run: supabase db push --linked
 
       - name: Verify hosted migration history, policies, and grants
@@ -92,7 +92,7 @@ jobs:
         run: |
           set -euo pipefail
           supabase migration list --linked | tee ../migration-history-after.txt
-          grep -Eq '`20260818000003`[[:space:]]*\|[[:space:]]*`20260818000003`' ../migration-history-after.txt
+          grep -Eq '`20260818000004`[[:space:]]*\|[[:space:]]*`20260818000004`' ../migration-history-after.txt
           supabase db query --linked --file supabase/verification/policy_grant_inventory.sql | tee ../policy-grant-inventory.txt
 
       - name: Upload staging migration evidence
