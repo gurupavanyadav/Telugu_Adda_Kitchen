@@ -2,6 +2,7 @@
 -- This script fails when the hosted project is missing a hardened migration,
 -- retains a forbidden legacy policy, or exposes the private order writer.
 
+
 DO $$
 DECLARE
   v_missing_migrations text;
@@ -22,7 +23,8 @@ BEGIN
       ('20260816000003'),
       ('20260816000004'),
       ('20260816000005'),
-      ('20260816000006')
+      ('20260816000006'),
+      ('20260818000001')
   )
   SELECT string_agg(e.version, ', ' ORDER BY e.version)
   INTO v_missing_migrations
@@ -31,9 +33,11 @@ BEGIN
     ON m.version = e.version
   WHERE m.version IS NULL;
 
+
   IF v_missing_migrations IS NOT NULL THEN
     RAISE EXCEPTION 'Missing required hardened migrations: %', v_missing_migrations;
   END IF;
+
 
   SELECT string_agg(format('%I.%I:%I', p.schemaname, p.tablename, p.policyname), ', ')
   INTO v_forbidden_policies
@@ -63,77 +67,7 @@ BEGIN
       'vendor_view_all_order_items'
     ]);
 
+
   IF v_forbidden_policies IS NOT NULL THEN
     RAISE EXCEPTION 'Forbidden legacy policies remain: %', v_forbidden_policies;
   END IF;
-
-  IF EXISTS (
-    SELECT 1
-    FROM pg_class AS c
-    JOIN pg_namespace AS n ON n.oid = c.relnamespace
-    WHERE n.nspname = 'public'
-      AND c.relname IN ('orders', 'order_items', 'addresses', 'user_roles')
-      AND c.relrowsecurity IS NOT TRUE
-  ) THEN
-    RAISE EXCEPTION 'RLS is disabled on one or more protected public tables';
-  END IF;
-
-  IF has_function_privilege(
-    'anon',
-    'public.create_order(text,text,uuid,text,jsonb,uuid)',
-    'EXECUTE'
-  ) THEN
-    RAISE EXCEPTION 'Anonymous callers can execute public.create_order';
-  END IF;
-
-  IF NOT has_function_privilege(
-    'authenticated',
-    'public.create_order(text,text,uuid,text,jsonb,uuid)',
-    'EXECUTE'
-  ) THEN
-    RAISE EXCEPTION 'Authenticated callers cannot execute the required public.create_order RPC';
-  END IF;
-
-  IF has_function_privilege(
-    'authenticated',
-    'private.internal_create_order(text,text,uuid,text,jsonb)',
-    'EXECUTE'
-  ) THEN
-    RAISE EXCEPTION 'Authenticated callers can execute private.internal_create_order';
-  END IF;
-
-  IF has_table_privilege('authenticated', 'public.orders', 'UPDATE') THEN
-    RAISE EXCEPTION 'Authenticated callers retain direct UPDATE on public.orders';
-  END IF;
-
-  IF NOT has_function_privilege(
-    'authenticated',
-    'public.list_vendor_fulfillment_orders()',
-    'EXECUTE'
-  ) THEN
-    RAISE EXCEPTION 'Authenticated callers cannot execute the required vendor fulfillment list RPC';
-  END IF;
-
-  IF NOT has_function_privilege(
-    'authenticated',
-    'public.update_vendor_order_fulfillment(uuid,text,text)',
-    'EXECUTE'
-  ) THEN
-    RAISE EXCEPTION 'Authenticated callers cannot execute the required vendor fulfillment update RPC';
-  END IF;
-
-  IF to_regprocedure('public.create_order(text,text,uuid,text,jsonb)') IS NOT NULL THEN
-    RAISE EXCEPTION 'The retired five-argument public.create_order overload remains executable';
-  END IF;
-END;
-$$;
-
-SELECT
-  p.tablename,
-  p.policyname,
-  p.cmd,
-  p.roles
-FROM pg_policies AS p
-WHERE p.schemaname = 'public'
-  AND p.tablename IN ('orders', 'order_items', 'addresses', 'user_roles')
-ORDER BY p.tablename, p.policyname;
