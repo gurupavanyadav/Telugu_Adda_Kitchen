@@ -1,220 +1,77 @@
-name: Staging live P0 security verification
-
-
-
-on:
-
-  workflow_dispatch:
-  
-    inputs:
-    
-      confirmation:
-      
-        description: 'Type RUN_STAGING_P0_VERIFICATION to run against the isolated staging project'
-        
-        required: true
-        
-        type: string
-        
-
-
-permissions:
-
-  contents: read
-  
-
-
-jobs:
-
-  verify-staging-p0:
-  
-    if: github.event.inputs.confirmation == 'RUN_STAGING_P0_VERIFICATION'
-    
-    name: Verify staging RLS and checkout controls
-    
     runs-on: ubuntu-latest
-    
     timeout-minutes: 25
-    
     environment: staging
-    
+    defaults:
+      run:
+        working-directory: delivery-app
     env:
-    
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
-      
       API_URL: ${{ secrets.VITE_SUPABASE_URL }}
-      
       ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-      
 
 
     steps:
-    
       - name: Check out reviewed repository contents
-      
         uses: actions/checkout@v4
-        
 
 
       - name: Set up Node.js
-      
         uses: actions/setup-node@v4
-        
         with:
-        
           node-version: 22
-          
           cache: npm
-          
+          cache-dependency-path: delivery-app/package-lock.json
 
 
       - name: Install locked dependencies
-      
         run: npm ci
-        
 
 
       - name: Fail closed on target or secret configuration mismatch
-      
         shell: bash
-        
         run: |
-        
           set -euo pipefail
-          
           test "$SUPABASE_PROJECT_REF" = "yuindzemvnnzrtzohbkz"
-          
           test "$API_URL" = "https://yuindzemvnnzrtzohbkz.supabase.co"
-          
           test -n "$SUPABASE_ACCESS_TOKEN"
-          
           test -n "$ANON_KEY"
-          
 
 
       - name: Retrieve and mask the ephemeral staging service-role credential
-      
         shell: bash
-        
         run: |
-        
           set -euo pipefail
-          
           api_keys_json="$(npx --yes supabase projects api-keys --project-ref "$SUPABASE_PROJECT_REF" --reveal --output json)"
-          
           service_role_key="$(
-          
             jq -er '
-            
               .. | objects
-              
               | select(((.name? // .type? // .key? // "") | tostring | ascii_downcase | test("service[_ -]*role")))
-              
               | (.api_key? // .apiKey? // .value? // .token? // empty)
-              
             ' <<< "$api_keys_json" | head -n 1
-            
           )"
-          
           test "${#service_role_key}" -gt 100
-          
           echo "::add-mask::$service_role_key"
-          
           printf 'SERVICE_ROLE_KEY=%s\n' "$service_role_key" >> "$GITHUB_ENV"
-          
           unset api_keys_json service_role_key
-          
 
 
       - name: Verify immutable migration manifest
-      
         run: npm run verify:migrations
-        
 
 
       - name: Verify local Supabase configuration guardrails
-      
         run: npm run test:supabase-config
-        
 
 
       - name: Run live RLS isolation suite against staging
-      
         run: npm run test:rls
-        
 
 
       - name: Run live checkout security suite against staging
-      
         run: npm run test:checkout
-        
 
 
       - name: Run live address RLS suite against staging
-      
         run: npm run test:address-rls
-        
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
