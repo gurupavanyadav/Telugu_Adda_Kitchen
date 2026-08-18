@@ -26,7 +26,8 @@ BEGIN
       ('20260818000001'),
       ('20260818000002'),
       ('20260818000003'),
-      ('20260818000004')
+      ('20260818000004'),
+      ('20260818000005')
   )
   SELECT string_agg(e.version, ', ' ORDER BY e.version)
   INTO v_missing_migrations
@@ -135,7 +136,7 @@ BEGIN
   END IF;
 
   IF NOT (
-    has_table_privilege('service_role', 'public.profiles', 'UPDATE')
+    has_table_privilege('service_role', 'public.profiles', 'SELECT, UPDATE')
     AND has_table_privilege('service_role', 'public.user_roles', 'INSERT, DELETE')
     AND has_table_privilege('service_role', 'public.addresses', 'INSERT, SELECT, DELETE')
     AND has_table_privilege('service_role', 'public.dishes', 'INSERT, SELECT, DELETE')
