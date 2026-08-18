@@ -27,7 +27,8 @@ BEGIN
       ('20260818000002'),
       ('20260818000003'),
       ('20260818000004'),
-      ('20260818000005')
+      ('20260818000005'),
+      ('20260818000006')
   )
   SELECT string_agg(e.version, ', ' ORDER BY e.version)
   INTO v_missing_migrations
@@ -115,6 +116,10 @@ BEGIN
     RAISE EXCEPTION 'Authenticated vendor catalog access is incomplete';
   END IF;
 
+  IF NOT has_table_privilege('authenticated', 'public.addresses', 'SELECT, INSERT, UPDATE, DELETE') THEN
+    RAISE EXCEPTION 'Authenticated owner-scoped address CRUD access is incomplete';
+  END IF;
+
   IF NOT has_function_privilege(
     'authenticated',
     'public.list_vendor_fulfillment_orders()',
@@ -165,6 +170,6 @@ FROM information_schema.role_table_grants
 WHERE table_schema = 'public'
   AND (
     (grantee = 'service_role' AND table_name IN ('profiles', 'user_roles', 'addresses', 'dishes', 'orders'))
-    OR (grantee = 'authenticated' AND table_name = 'dishes')
+    OR (grantee = 'authenticated' AND table_name IN ('addresses', 'dishes'))
   )
 ORDER BY table_name, privilege_type;
