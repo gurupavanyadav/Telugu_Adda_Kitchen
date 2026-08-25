@@ -32,6 +32,8 @@ jobs:
       BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
       RECOVERY_TARGET_PROJECT_REF: ${{ secrets.RECOVERY_TARGET_PROJECT_REF }}
       RECOVERY_TARGET_DB_URL: ${{ secrets.RECOVERY_TARGET_DB_URL }}
+      RECOVERY_TARGET_SERVICE_ROLE_KEY: ${{ secrets.RECOVERY_TARGET_SERVICE_ROLE_KEY }}
+      RECOVERY_TARGET_ANON_KEY: ${{ secrets.RECOVERY_TARGET_ANON_KEY }}
 
     steps:
       - name: Check out reviewed repository contents
@@ -57,7 +59,7 @@ jobs:
           set -euo pipefail
           test "$CONFIRMATION" = "REHEARSE_PRODUCTION_ENCRYPTED_RECOVERY"
           test "$SUPABASE_PROJECT_REF" = "xwxjxmbafiguwrqbxgoz"
-          for variable in SUPABASE_ACCESS_TOKEN SUPABASE_PROJECT_REF SUPABASE_DB_PASSWORD BACKUP_ENCRYPTION_PASSPHRASE RECOVERY_TARGET_PROJECT_REF RECOVERY_TARGET_DB_URL; do
+          for variable in SUPABASE_ACCESS_TOKEN SUPABASE_PROJECT_REF SUPABASE_DB_PASSWORD BACKUP_ENCRYPTION_PASSPHRASE RECOVERY_TARGET_PROJECT_REF RECOVERY_TARGET_DB_URL RECOVERY_TARGET_SERVICE_ROLE_KEY RECOVERY_TARGET_ANON_KEY; do
             if [[ -z "${!variable:-}" ]]; then
               echo "Missing protected production environment secret: $variable" >&2
               exit 1
@@ -184,22 +186,17 @@ jobs:
           psql --variable ON_ERROR_STOP=1 --file supabase/verification/policy_grant_inventory.sql --dbname "$RECOVERY_TARGET_DB_URL" \
             | tee ../recovery-policy-grant-inventory.txt
 
-      - name: Retrieve and mask ephemeral recovery-target API credentials
+      - name: Validate and mask protected recovery-target test credentials
         shell: bash
         run: |
           set -euo pipefail
-          api_keys_json="$(npx --yes supabase projects api-keys --project-ref "$RECOVERY_TARGET_PROJECT_REF" --reveal --output json)"
-          service_role_key="$(jq -er '.. | objects | select(((.name? // .type? // .key? // "") | tostring | ascii_downcase | test("service[_ -]*role"))) | (.api_key? // .apiKey? // .value? // .token? // empty)' <<< "$api_keys_json" | head -n 1)"
-          anon_key="$(jq -er '.. | objects | select(((.name? // .type? // .key? // "") | tostring | ascii_downcase | test("^(anon|publishable)$"))) | (.api_key? // .apiKey? // .value? // .token? // empty)' <<< "$api_keys_json" | head -n 1)"
-          test "${#service_role_key}" -gt 100
-          test "${#anon_key}" -gt 100
-          echo "::add-mask::$service_role_key"
-          echo "::add-mask::$anon_key"
-          printf 'SERVICE_ROLE_KEY=%s\n' "$service_role_key" >> "$GITHUB_ENV"
-          printf 'ANON_KEY=%s\n' "$anon_key" >> "$GITHUB_ENV"
+          test "${#RECOVERY_TARGET_SERVICE_ROLE_KEY}" -gt 100
+          test "${#RECOVERY_TARGET_ANON_KEY}" -gt 100
+          echo "::add-mask::$RECOVERY_TARGET_SERVICE_ROLE_KEY"
+          echo "::add-mask::$RECOVERY_TARGET_ANON_KEY"
+          printf 'SERVICE_ROLE_KEY=%s\n' "$RECOVERY_TARGET_SERVICE_ROLE_KEY" >> "$GITHUB_ENV"
+          printf 'ANON_KEY=%s\n' "$RECOVERY_TARGET_ANON_KEY" >> "$GITHUB_ENV"
           printf 'API_URL=https://%s.supabase.co\n' "$RECOVERY_TARGET_PROJECT_REF" >> "$GITHUB_ENV"
-          unset api_keys_json service_role_key anon_key
-
       - name: Run live RLS isolation suite against the restored recovery target
         run: npm run test:rls
 
