@@ -37,4 +37,4 @@ No P1 backlog item is marked complete by this tracker. Any future marketplace/mu
 ## Current requested documentation
 
 - [x] Rewrite the root repository `README.md` as the latest detailed guide, accurately distinguishing completed P0 controls from remaining public-launch hardening work and preserving the no-secrets rule. Updated file: `README.md` in the isolated audit checkout.
-- [ ] Publish a documentation-only `main`-branch commit containing the rewritten README, final P0 closure evidence, audit/status records, and tracker updates; verify that no secrets, exports, application code, migrations, or protected configuration are included.
+- [x] Publish the documentation-only `main`-branch updates containing the rewritten README, final P0 closure evidence, audit/status records, and tracker updates; verify that no secrets, exports, application code, migrations, or protected configuration are included. Published commits: `67fedeb7e5c8e0122b9fa6e84654f10c0b9cadd0`, `1e474313bac9c8ed2cc7870863b7c260abf62c6f`, and `0ef6f64d2a46fda36ea571707169522389716d23`.
