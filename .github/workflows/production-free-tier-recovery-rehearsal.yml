@@ -168,6 +168,7 @@ jobs:
             --file ../recovery-bundle/production-schema.sql \
             --command 'SET session_replication_role = replica' \
             --file ../recovery-bundle/production-data.sql \
+            --command 'CREATE SCHEMA IF NOT EXISTS supabase_migrations; CREATE TABLE IF NOT EXISTS supabase_migrations.schema_migrations (version text PRIMARY KEY, statements text[], name text);' \
             --file ../recovery-bundle/production-migration-history.sql \
             --dbname "$RECOVERY_TARGET_DB_URL"
 
