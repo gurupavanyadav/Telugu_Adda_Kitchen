@@ -72,17 +72,25 @@ jobs:
       - name: Link the isolated staging project
         run: supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
 
-      - name: Verify only the approved forward fix is pending
+      - name: Verify the approved forward fix is pending or already applied
         shell: bash
         run: |
           set -euo pipefail
           supabase migration list --linked | tee ../migration-history-before.txt
           pending_versions="$(awk -F '|' '$1 ~ /`[0-9]+`/ && $2 !~ /`[0-9]+`/ { version = $1; gsub(/[^0-9]/, "", version); print version }' ../migration-history-before.txt)"
           remote_versions="$(awk -F '|' '$2 ~ /`[0-9]+`/ { count += 1 } END { print count + 0 }' ../migration-history-before.txt)"
-          test "$pending_versions" = "20260825000000"
-          test "$remote_versions" = "20"
+          if [[ "$pending_versions" == "20260825000000" && "$remote_versions" == "20" ]]; then
+            echo "FORWARD_FIX_PENDING=true" >> "$GITHUB_ENV"
+          elif [[ -z "$pending_versions" && "$remote_versions" == "21" ]] \
+            && grep -Eq '`20260825000000`[[:space:]]*\|[[:space:]]*`20260825000000`' ../migration-history-before.txt; then
+            echo "FORWARD_FIX_PENDING=false" >> "$GITHUB_ENV"
+          else
+            echo "Unexpected staging migration state; refusing to continue." >&2
+            exit 1
+          fi
 
       - name: Apply the narrow Auth trigger execution-grant fix to staging
+        if: env.FORWARD_FIX_PENDING == 'true'
         run: supabase db push --linked
 
       - name: Retrieve and mask the ephemeral staging service-role credential
