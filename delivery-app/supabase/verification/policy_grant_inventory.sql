@@ -28,7 +28,8 @@ BEGIN
       ('20260818000003'),
       ('20260818000004'),
       ('20260818000005'),
-      ('20260818000006')
+      ('20260818000006'),
+      ('20260825000000')
   )
   SELECT string_agg(e.version, ', ' ORDER BY e.version)
   INTO v_missing_migrations
@@ -90,6 +91,16 @@ BEGIN
     'EXECUTE'
   ) THEN
     RAISE EXCEPTION 'Anonymous callers can execute public.create_order';
+  END IF;
+
+  IF to_regprocedure('public.handle_new_user()') IS NULL THEN
+    RAISE EXCEPTION 'Required Auth profile trigger function public.handle_new_user is missing';
+  END IF;
+
+  IF has_function_privilege('anon', 'public.handle_new_user()', 'EXECUTE')
+    OR has_function_privilege('authenticated', 'public.handle_new_user()', 'EXECUTE')
+    OR has_function_privilege('service_role', 'public.handle_new_user()', 'EXECUTE') THEN
+    RAISE EXCEPTION 'A client-facing role can directly execute public.handle_new_user';
   END IF;
 
   IF NOT has_function_privilege(
@@ -173,3 +184,12 @@ WHERE table_schema = 'public'
     OR (grantee = 'authenticated' AND table_name IN ('addresses', 'dishes'))
   )
 ORDER BY table_name, privilege_type;
+
+SELECT
+  grantee,
+  routine_name,
+  privilege_type
+FROM information_schema.role_routine_grants
+WHERE routine_schema = 'public'
+  AND routine_name = 'handle_new_user'
+ORDER BY grantee, privilege_type;
