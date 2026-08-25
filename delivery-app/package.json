@@ -14,7 +14,8 @@
     "test:supabase-config": "node --test scripts/test-supabase-config.mjs",
     "test:rls": "node --test scripts/test-rls.mjs",
     "test:checkout": "node --test scripts/test-checkout.mjs",
-    "test:address-rls": "node --test scripts/test-address-rls.mjs"
+    "test:address-rls": "node --test scripts/test-address-rls.mjs",
+    "test:auth-profile-trigger": "node --test scripts/test-auth-profile-trigger.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",
