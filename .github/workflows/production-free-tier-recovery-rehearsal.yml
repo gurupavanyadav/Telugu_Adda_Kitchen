@@ -157,10 +157,14 @@ jobs:
         run: |
           set -euo pipefail
           psql --version
+          # A Supabase role-only export includes a server logging GUC that an
+          # external recovery connection is not allowed to set. It is not a
+          # role, schema, data, migration, policy, or grant definition.
+          sed '/^SET log_min_messages = /d' ../recovery-bundle/production-roles.sql > ../recovery-bundle/production-roles-recovery.sql
           psql \
             --single-transaction \
             --variable ON_ERROR_STOP=1 \
-            --file ../recovery-bundle/production-roles.sql \
+            --file ../recovery-bundle/production-roles-recovery.sql \
             --file ../recovery-bundle/production-schema.sql \
             --command 'SET session_replication_role = replica' \
             --file ../recovery-bundle/production-data.sql \
