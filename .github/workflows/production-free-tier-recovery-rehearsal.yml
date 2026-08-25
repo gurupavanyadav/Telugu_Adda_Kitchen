@@ -143,7 +143,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          recovered_migration_count="$(psql --tuples-only --no-align --dbname "$RECOVERY_TARGET_DB_URL" --command "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version ~ '^[0-9]+$';")"
+          migration_history_exists="$(psql --tuples-only --no-align --dbname "$RECOVERY_TARGET_DB_URL" --command "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_class AS relation JOIN pg_catalog.pg_namespace AS schema ON schema.oid = relation.relnamespace WHERE schema.nspname = 'supabase_migrations' AND relation.relname = 'schema_migrations' AND relation.relkind IN ('r', 'p'));" )"
+          if [[ "$migration_history_exists" = "t" ]]; then
+            recovered_migration_count="$(psql --tuples-only --no-align --dbname "$RECOVERY_TARGET_DB_URL" --command "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version ~ '^[0-9]+$';")"
+          else
+            recovered_migration_count=0
+          fi
           test "$recovered_migration_count" = "0"
           echo "recovery_target_application_migrations_before=$recovered_migration_count" > ../recovery-target-migration-history-before.txt
 
