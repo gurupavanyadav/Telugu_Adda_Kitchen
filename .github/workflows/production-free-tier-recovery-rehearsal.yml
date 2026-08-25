@@ -1,0 +1,239 @@
+name: Rehearse production encrypted backup recovery
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type REHEARSE_PRODUCTION_ENCRYPTED_RECOVERY to export production and restore only into the separately approved empty recovery project.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: delivery-app-production-free-tier-recovery
+  cancel-in-progress: false
+
+jobs:
+  rehearse-production-encrypted-recovery:
+    name: Create encrypted export and verify isolated recovery
+    if: github.event.inputs.confirmation == 'REHEARSE_PRODUCTION_ENCRYPTED_RECOVERY'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: delivery-app
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
+      RECOVERY_TARGET_PROJECT_REF: ${{ secrets.RECOVERY_TARGET_PROJECT_REF }}
+      RECOVERY_TARGET_DB_URL: ${{ secrets.RECOVERY_TARGET_DB_URL }}
+
+    steps:
+      - name: Check out reviewed repository contents
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: delivery-app/package-lock.json
+
+      - name: Set up Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.115.0
+
+      - name: Validate production and isolated-recovery authorization
+        shell: bash
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          test "$CONFIRMATION" = "REHEARSE_PRODUCTION_ENCRYPTED_RECOVERY"
+          test "$SUPABASE_PROJECT_REF" = "xwxjxmbafiguwrqbxgoz"
+          for variable in SUPABASE_ACCESS_TOKEN SUPABASE_PROJECT_REF SUPABASE_DB_PASSWORD BACKUP_ENCRYPTION_PASSPHRASE RECOVERY_TARGET_PROJECT_REF RECOVERY_TARGET_DB_URL; do
+            if [[ -z "${!variable:-}" ]]; then
+              echo "Missing protected production environment secret: $variable" >&2
+              exit 1
+            fi
+          done
+          if [[ "$RECOVERY_TARGET_PROJECT_REF" = "$SUPABASE_PROJECT_REF" ]]; then
+            echo "Recovery target must be a separate project; production overwrite is prohibited." >&2
+            exit 1
+          fi
+
+      - name: Install locked test dependencies
+        run: npm ci
+
+      - name: Link the isolated production source project
+        run: supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+
+      - name: Create the documented logical export set
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          supabase db dump --linked --role-only --file ../production-roles.sql
+          supabase db dump --linked --file ../production-schema.sql
+          supabase db dump --linked --use-copy --data-only \
+            --exclude storage.buckets_vectors \
+            --exclude storage.vector_indexes \
+            --file ../production-data.sql
+          supabase db dump --linked --use-copy --data-only --schema supabase_migrations --file ../production-migration-history.sql
+          for export_file in ../production-roles.sql ../production-schema.sql ../production-data.sql ../production-migration-history.sql; do
+            test -s "$export_file"
+          done
+          {
+            echo "source_project_ref=$SUPABASE_PROJECT_REF"
+            echo "created_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            (
+              cd ..
+              sha256sum production-roles.sql production-schema.sql production-data.sql production-migration-history.sql
+            )
+          } > ../production-backup-manifest.txt
+
+      - name: Encrypt the export set and remove source plaintext
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          tar -C .. -czf ../production-logical-backup.tar.gz \
+            production-roles.sql \
+            production-schema.sql \
+            production-data.sql \
+            production-migration-history.sql \
+            production-backup-manifest.txt
+          gpg --batch --yes --pinentry-mode loopback \
+            --passphrase "$BACKUP_ENCRYPTION_PASSPHRASE" \
+            --symmetric --cipher-algo AES256 \
+            --output ../production-logical-backup.tar.gz.gpg \
+            ../production-logical-backup.tar.gz
+          sha256sum ../production-logical-backup.tar.gz.gpg > ../production-logical-backup.tar.gz.gpg.sha256
+          shred --remove --zero \
+            ../production-roles.sql \
+            ../production-schema.sql \
+            ../production-data.sql \
+            ../production-migration-history.sql \
+            ../production-logical-backup.tar.gz
+
+      - name: Decrypt and validate the recovery bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          sha256sum --check ../production-logical-backup.tar.gz.gpg.sha256
+          gpg --batch --yes --pinentry-mode loopback \
+            --passphrase "$BACKUP_ENCRYPTION_PASSPHRASE" \
+            --decrypt --output ../recovery-bundle.tar.gz \
+            ../production-logical-backup.tar.gz.gpg
+          mkdir -p ../recovery-bundle
+          tar -C ../recovery-bundle -xzf ../recovery-bundle.tar.gz
+          (
+            cd ../recovery-bundle
+            sha256sum --check <(grep -E '  production-(roles|schema|data|migration-history)\.sql$' production-backup-manifest.txt)
+          )
+
+      - name: Confirm the recovery target contains no application migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          recovered_migration_count="$(psql --tuples-only --no-align --dbname "$RECOVERY_TARGET_DB_URL" --command "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version ~ '^[0-9]+$';")"
+          test "$recovered_migration_count" = "0"
+          echo "recovery_target_application_migrations_before=$recovered_migration_count" > ../recovery-target-migration-history-before.txt
+
+      - name: Restore only into the isolated recovery project
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql --version
+          psql \
+            --single-transaction \
+            --variable ON_ERROR_STOP=1 \
+            --file ../recovery-bundle/production-roles.sql \
+            --file ../recovery-bundle/production-schema.sql \
+            --command 'SET session_replication_role = replica' \
+            --file ../recovery-bundle/production-data.sql \
+            --file ../recovery-bundle/production-migration-history.sql \
+            --dbname "$RECOVERY_TARGET_DB_URL"
+
+      - name: Verify restored schema, migration history, policies, and grants
+        shell: bash
+        run: |
+          set -euo pipefail
+          restored_migration_count="$(psql --tuples-only --no-align --dbname "$RECOVERY_TARGET_DB_URL" --command "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version ~ '^[0-9]+$';")"
+          test "$restored_migration_count" = "21"
+          restored_relation_count="$(psql --tuples-only --no-align --dbname "$RECOVERY_TARGET_DB_URL" --command "SELECT count(*) FROM pg_class WHERE relnamespace = 'public'::regnamespace AND relname IN ('addresses','dishes','orders','order_items','profiles','user_roles');")"
+          test "$restored_relation_count" = "6"
+          psql --variable ON_ERROR_STOP=1 --file supabase/verification/policy_grant_inventory.sql --dbname "$RECOVERY_TARGET_DB_URL" \
+            | tee ../recovery-policy-grant-inventory.txt
+
+      - name: Retrieve and mask ephemeral recovery-target API credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          api_keys_json="$(npx --yes supabase projects api-keys --project-ref "$RECOVERY_TARGET_PROJECT_REF" --reveal --output json)"
+          service_role_key="$(jq -er '.. | objects | select(((.name? // .type? // .key? // "") | tostring | ascii_downcase | test("service[_ -]*role"))) | (.api_key? // .apiKey? // .value? // .token? // empty)' <<< "$api_keys_json" | head -n 1)"
+          anon_key="$(jq -er '.. | objects | select(((.name? // .type? // .key? // "") | tostring | ascii_downcase | test("^(anon|publishable)$"))) | (.api_key? // .apiKey? // .value? // .token? // empty)' <<< "$api_keys_json" | head -n 1)"
+          test "${#service_role_key}" -gt 100
+          test "${#anon_key}" -gt 100
+          echo "::add-mask::$service_role_key"
+          echo "::add-mask::$anon_key"
+          printf 'SERVICE_ROLE_KEY=%s\n' "$service_role_key" >> "$GITHUB_ENV"
+          printf 'ANON_KEY=%s\n' "$anon_key" >> "$GITHUB_ENV"
+          printf 'API_URL=https://%s.supabase.co\n' "$RECOVERY_TARGET_PROJECT_REF" >> "$GITHUB_ENV"
+          unset api_keys_json service_role_key anon_key
+
+      - name: Run live RLS isolation suite against the restored recovery target
+        run: npm run test:rls
+
+      - name: Run live checkout security suite against the restored recovery target
+        run: npm run test:checkout
+
+      - name: Run live address RLS suite against the restored recovery target
+        run: npm run test:address-rls
+
+      - name: Record the isolated recovery outcome
+        if: success()
+        shell: bash
+        run: |
+          {
+            echo "status=passed"
+            echo "source_project_ref=$SUPABASE_PROJECT_REF"
+            echo "target_project_ref=$RECOVERY_TARGET_PROJECT_REF"
+            echo "restore_scope=separate_empty_supabase_project"
+            echo "completed_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > ../production-recovery-rehearsal-report.txt
+
+      - name: Remove plaintext export remnants
+        if: always()
+        shell: bash
+        run: |
+          rm -f \
+            ../production-roles.sql \
+            ../production-schema.sql \
+            ../production-data.sql \
+            ../production-migration-history.sql \
+            ../production-logical-backup.tar.gz \
+            ../recovery-bundle.tar.gz
+          rm -rf ../recovery-bundle
+
+      - name: Upload encrypted recovery evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-free-tier-encrypted-recovery-evidence
+          path: |
+            production-logical-backup.tar.gz.gpg
+            production-logical-backup.tar.gz.gpg.sha256
+            production-backup-manifest.txt
+            recovery-target-migration-history-before.txt
+            recovery-policy-grant-inventory.txt
+            production-recovery-rehearsal-report.txt
+          if-no-files-found: warn
+          retention-days: 90

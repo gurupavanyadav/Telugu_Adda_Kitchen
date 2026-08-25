@@ -1,0 +1,124 @@
+name: Validate staging Auth trigger grant fix
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type APPLY_STAGING_HANDLE_NEW_USER_FORWARD_FIX to apply and validate the narrow Auth trigger grant fix in staging.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: delivery-app-staging-handle-new-user-forward-fix
+  cancel-in-progress: false
+
+jobs:
+  apply-and-validate-staging-forward-fix:
+    if: github.event.inputs.confirmation == 'APPLY_STAGING_HANDLE_NEW_USER_FORWARD_FIX'
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: delivery-app
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      API_URL: ${{ secrets.VITE_SUPABASE_URL }}
+      ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+
+    steps:
+      - name: Check out reviewed repository contents
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: delivery-app/package-lock.json
+
+      - name: Set up Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.115.0
+
+      - name: Validate explicit staging-only authorization
+        shell: bash
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          test "$CONFIRMATION" = "APPLY_STAGING_HANDLE_NEW_USER_FORWARD_FIX"
+          test "$SUPABASE_PROJECT_REF" = "yuindzemvnnzrtzohbkz"
+          test "$API_URL" = "https://yuindzemvnnzrtzohbkz.supabase.co"
+          for variable in SUPABASE_ACCESS_TOKEN SUPABASE_PROJECT_REF SUPABASE_DB_PASSWORD API_URL ANON_KEY; do
+            if [[ -z "${!variable:-}" ]]; then
+              echo "Missing protected staging environment secret: $variable" >&2
+              exit 1
+            fi
+          done
+
+      - name: Install locked dependencies and verify immutable artifacts
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run verify:migrations
+
+      - name: Link the isolated staging project
+        run: supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+
+      - name: Verify only the approved forward fix is pending
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase migration list --linked | tee ../migration-history-before.txt
+          pending_versions="$(awk -F '|' '$1 ~ /`[0-9]+`/ && $2 !~ /`[0-9]+`/ { version = $1; gsub(/[^0-9]/, "", version); print version }' ../migration-history-before.txt)"
+          remote_versions="$(awk -F '|' '$2 ~ /`[0-9]+`/ { count += 1 } END { print count + 0 }' ../migration-history-before.txt)"
+          test "$pending_versions" = "20260825000000"
+          test "$remote_versions" = "20"
+
+      - name: Apply the narrow Auth trigger execution-grant fix to staging
+        run: supabase db push --linked
+
+      - name: Retrieve and mask the ephemeral staging service-role credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          api_keys_json="$(npx --yes supabase projects api-keys --project-ref "$SUPABASE_PROJECT_REF" --reveal --output json)"
+          service_role_key="$(jq -er '.. | objects | select(((.name? // .type? // .key? // "") | tostring | ascii_downcase | test("service[_ -]*role"))) | (.api_key? // .apiKey? // .value? // .token? // empty)' <<< "$api_keys_json" | head -n 1)"
+          test "${#service_role_key}" -gt 100
+          echo "::add-mask::$service_role_key"
+          printf 'SERVICE_ROLE_KEY=%s\n' "$service_role_key" >> "$GITHUB_ENV"
+          unset api_keys_json service_role_key
+
+      - name: Verify hosted history, policy inventory, and Auth profile trigger
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase migration list --linked | tee ../migration-history-after.txt
+          grep -Eq '`20260825000000`[[:space:]]*\|[[:space:]]*`20260825000000`' ../migration-history-after.txt
+          supabase db query --linked --file supabase/verification/policy_grant_inventory.sql | tee ../policy-grant-inventory.txt
+          npm run test:auth-profile-trigger
+
+      - name: Re-run staging P0 live authorization controls
+        run: |
+          npm run test:rls
+          npm run test:checkout
+          npm run test:address-rls
+
+      - name: Upload staging forward-fix evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-handle-new-user-forward-fix-evidence
+          path: |
+            migration-history-before.txt
+            migration-history-after.txt
+            policy-grant-inventory.txt
+          if-no-files-found: warn
+          retention-days: 90
