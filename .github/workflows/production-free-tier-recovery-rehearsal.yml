@@ -190,8 +190,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "${#RECOVERY_TARGET_SERVICE_ROLE_KEY}" -gt 100
-          test "${#RECOVERY_TARGET_ANON_KEY}" -gt 100
+          case "$RECOVERY_TARGET_SERVICE_ROLE_KEY" in
+            sb_secret_*|eyJ*) ;;
+            *) echo "Recovery service credential has an unsupported key format." >&2; exit 1 ;;
+          esac
+          case "$RECOVERY_TARGET_ANON_KEY" in
+            sb_publishable_*|eyJ*) ;;
+            *) echo "Recovery publishable credential has an unsupported key format." >&2; exit 1 ;;
+          esac
           echo "::add-mask::$RECOVERY_TARGET_SERVICE_ROLE_KEY"
           echo "::add-mask::$RECOVERY_TARGET_ANON_KEY"
           printf 'SERVICE_ROLE_KEY=%s\n' "$RECOVERY_TARGET_SERVICE_ROLE_KEY" >> "$GITHUB_ENV"
